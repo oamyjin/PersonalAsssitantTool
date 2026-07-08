@@ -1287,24 +1287,44 @@ function parseSheet(xml, sharedStrings){
   }
   return rows;
 }
-async function readXlsxToday(bytes){
+function sheetGridRows(grid){
+  const rowIdx = Object.keys(grid).map(Number).sort((a, b) => a - b);
+  if (!rowIdx.length) return { rowIdx, colOf: {}, get: () => undefined };
+  const headerRow = grid[rowIdx[0]]; const colOf = {};
+  for (const [col, cell] of Object.entries(headerRow)) { const h = String(cell.value ?? "").trim(); if (h) colOf[h] = +col; }
+  const get = (cells, header) => { const c = colOf[header]; return c != null ? cells[c] : undefined; };
+  return { rowIdx, colOf, get };
+}
+function cellStr(cell){ return cell && cell.value != null ? String(cell.value) : ""; }
+function cellBool(cell){
+  const s = cellStr(cell).trim().toLowerCase();
+  return s === "yes" || s === "true" || s === "1" || s === "done" || s === "x";
+}
+function areaKey(v){
+  const s = String(v || "").trim().toLowerCase();
+  return AREAS.find(area => area === s || AREA_LABELS[area].toLowerCase() === s) || "research";
+}
+async function readXlsxBackup(bytes){
   const parts = await unzip(bytes); const dec = new TextDecoder();
   const wbXml = dec.decode(parts["xl/workbook.xml"] || new Uint8Array());
   const relsXml = dec.decode(parts["xl/_rels/workbook.xml.rels"] || new Uint8Array());
   const shared = parseSharedStrings(parts["xl/sharedStrings.xml"] ? dec.decode(parts["xl/sharedStrings.xml"]) : "");
   const sheetTags = [...wbXml.matchAll(/<sheet\b[^>]*\/>/g)].map(x => x[0]);
-  let ridForToday = null, firstRid = null;
-  for (const tag of sheetTags) { const rid = xattr(tag, "r:id"); if (firstRid === null) firstRid = rid; if ((xattr(tag,"name")||"").toLowerCase() === "today") ridForToday = rid; }
-  const rid = ridForToday || firstRid; let target = null;
-  for (const rel of [...relsXml.matchAll(/<Relationship\b[^>]*\/>/g)].map(x => x[0])) if (xattr(rel, "Id") === rid) target = xattr(rel, "Target");
-  let path = target ? ("xl/" + target.replace(/^\/?xl\//, "").replace(/^\//, "")) : "xl/worksheets/sheet1.xml";
-  if (!parts[path]) path = Object.keys(parts).find(p => /xl\/worksheets\/sheet\d+\.xml$/.test(p));
-  const grid = parseSheet(dec.decode(parts[path]), shared);
-  const rowIdx = Object.keys(grid).map(Number).sort((a, b) => a - b);
-  if (!rowIdx.length) return [];
-  const headerRow = grid[rowIdx[0]]; const colOf = {};
-  for (const [col, cell] of Object.entries(headerRow)) { const h = String(cell.value ?? "").trim(); if (h) colOf[h] = +col; }
-  const get = (cells, header) => { const c = colOf[header]; return c != null ? cells[c] : undefined; };
+  const relTarget = {};
+  for (const rel of [...relsXml.matchAll(/<Relationship\b[^>]*\/>/g)].map(x => x[0])) relTarget[xattr(rel, "Id")] = xattr(rel, "Target");
+  const sheetPaths = {};
+  sheetTags.forEach((tag, i) => {
+    const name = (xattr(tag, "name") || `Sheet${i + 1}`).toLowerCase();
+    const rid = xattr(tag, "r:id");
+    const target = relTarget[rid];
+    let path = target ? ("xl/" + target.replace(/^\/?xl\//, "").replace(/^\//, "")) : `xl/worksheets/sheet${i + 1}.xml`;
+    if (!parts[path]) path = `xl/worksheets/sheet${i + 1}.xml`;
+    sheetPaths[name] = path;
+  });
+  const firstPath = sheetPaths.today || sheetPaths.sessions || Object.values(sheetPaths)[0] || Object.keys(parts).find(p => /xl\/worksheets\/sheet\d+\.xml$/.test(p));
+  const sessionsPath = sheetPaths.sessions || sheetPaths.today || firstPath;
+  const grid = sessionsPath && parts[sessionsPath] ? parseSheet(dec.decode(parts[sessionsPath]), shared) : {};
+  const { rowIdx, get } = sheetGridRows(grid);
   const sessions = [];
   for (let i = 1; i < rowIdx.length; i++) {
     const cells = grid[rowIdx[i]]; const dCell = get(cells, "Date"); const evCell = get(cells, "Event");
@@ -1325,7 +1345,41 @@ async function readXlsxToday(bytes){
     const focusNum = (focusCell && focusCell.value !== "" && focusCell.value != null) ? num(focusCell) : null;
     sessions.push({ id: uid(), date, start, end, hrs, personal, focus: personal ? null : focusNum, event, note: str(get(cells, "Notes")), category, todoArea: str(get(cells, "Todo Area")), todoText: str(get(cells, "Todo")), startHour: +start.split(":")[0] });
   }
-  return sessions;
+
+  const tasks = emptyTasks();
+  let weekStart = "";
+  const weekPath = sheetPaths["week setup"];
+  if (weekPath && parts[weekPath]) {
+    const weekGrid = parseSheet(dec.decode(parts[weekPath]), shared);
+    const weekRows = sheetGridRows(weekGrid);
+    for (let i = 1; i < weekRows.rowIdx.length; i++) {
+      const cells = weekGrid[weekRows.rowIdx[i]];
+      if (!weekStart) weekStart = cellStr(weekRows.get(cells, "Week Start")).slice(0, 10);
+      const text = cellStr(weekRows.get(cells, "Task")).trim();
+      if (!text) continue;
+      tasks[areaKey(cellStr(weekRows.get(cells, "Area")))].push({ id: uid(), text, done: cellBool(weekRows.get(cells, "Done")) });
+    }
+  }
+
+  const dailyTodos = {};
+  const todoPath = sheetPaths["daily todos"];
+  if (todoPath && parts[todoPath]) {
+    const todoGrid = parseSheet(dec.decode(parts[todoPath]), shared);
+    const todoRows = sheetGridRows(todoGrid);
+    for (let i = 1; i < todoRows.rowIdx.length; i++) {
+      const cells = todoGrid[todoRows.rowIdx[i]];
+      const date = cellStr(todoRows.get(cells, "Date")).slice(0, 10);
+      const text = cellStr(todoRows.get(cells, "Todo")).trim();
+      if (!date || !text) continue;
+      if (!dailyTodos[date]) dailyTodos[date] = emptyTasks();
+      dailyTodos[date][areaKey(cellStr(todoRows.get(cells, "Area")))].push({ id: uid(), text, done: cellBool(todoRows.get(cells, "Done")) });
+    }
+  }
+
+  return { sessions, tasks, dailyTodos, weekStart, hasWeekSetup: !!weekPath, hasDailyTodos: !!todoPath };
+}
+async function readXlsxToday(bytes){
+  return (await readXlsxBackup(bytes)).sessions;
 }
 /* ---- zip writer (STORE) + xlsx builder ---- */
 function strBytes(s){ return new TextEncoder().encode(s); }
@@ -1512,9 +1566,23 @@ document.getElementById("importFile").onchange = async e => {
   try {
     if(isXlsx){
       const bytes = new Uint8Array(await f.arrayBuffer());
-      const rows = await readXlsxToday(bytes);
-      if(!rows.length){ alert("No session rows found in that spreadsheet. Expected a sheet with Date, From, To, Focus, Event columns."); }
-      else { const added = mergeSessions(rows); save(); render(); alert(`Imported ${added} new record${added===1?"":"s"} from ${f.name} (${rows.length - added} already present).`); }
+      const imported = await readXlsxBackup(bytes);
+      if(imported.hasWeekSetup) {
+        data.tasks = normalizeAreaTasks(imported.tasks);
+        if(imported.weekStart) data.weekStart = imported.weekStart;
+      }
+      if(imported.hasDailyTodos) data.dailyTodos = normalizeDailyTodos(imported.dailyTodos);
+      const added = mergeSessions(imported.sessions);
+      save();
+      render();
+      if(!imported.sessions.length && !imported.hasWeekSetup && !imported.hasDailyTodos) {
+        alert("No supported sheets found in that spreadsheet. Expected Sessions, Week Setup, or Daily Todos sheets.");
+      } else {
+        const parts = [`${added} new session${added===1?"":"s"}`];
+        if(imported.hasWeekSetup) parts.push("week setup");
+        if(imported.hasDailyTodos) parts.push("daily todos");
+        alert(`Imported ${parts.join(", ")} from ${f.name}.`);
+      }
     } else {
       const text = await f.text();
       const imported = JSON.parse(text);
