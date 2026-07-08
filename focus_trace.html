@@ -1,0 +1,1272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Focus Trace</title>
+<style>
+  :root {
+    --ink: #182026;
+    --paper: #f6f8f7;
+    --panel: #ffffff;
+    --field: #fbfcfb;
+    --line: #dce4e0;
+    --line-strong: #c8d4cf;
+    --muted: #68737a;
+    --accent: #28715f;
+    --accent-soft: #edf6f2;
+    --blue: #5b8fc4;
+    --amber: #e0a63e;
+    --rust: #a34b3f;
+    --radius: 8px;
+    --mono: "SF Mono", "JetBrains Mono", "Menlo", monospace;
+    --sans: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--sans);
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1140px; margin: 0 auto; padding: 28px 22px 72px; }
+  header.top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    gap: 18px;
+    border-bottom: 1px solid var(--line-strong);
+    padding: 2px 0 18px;
+    margin-bottom: 20px;
+  }
+  h1 { margin: 0; font-size: 32px; letter-spacing: 0; font-weight: 800; }
+  .sub {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    text-align: right;
+  }
+  .main-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.35fr) minmax(300px, .65fr);
+    gap: 18px;
+    align-items: start;
+  }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 20px;
+    box-shadow: 0 1px 2px rgba(24, 32, 38, .04);
+  }
+  .panel + .panel, details.panel { margin-top: 18px; }
+  .panel h2, summary {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    font-weight: 700;
+  }
+  .panel h2 { margin: 0 0 16px; }
+  details.panel { padding: 0; overflow: hidden; }
+  summary {
+    list-style: none;
+    cursor: pointer;
+    padding: 16px 18px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #fbfcfb;
+  }
+  summary::-webkit-details-marker { display: none; }
+  summary::after { content: "+"; color: var(--accent); font-size: 18px; line-height: 1; }
+  details[open] summary { border-bottom: 1px solid var(--line); }
+  details[open] summary::after { content: "-"; }
+  .details-body { padding: 18px; background: var(--panel); }
+  label {
+    display: block;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--muted);
+    margin-bottom: 5px;
+  }
+  input, select, textarea {
+    width: 100%;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--field);
+    color: var(--ink);
+    padding: 10px 11px;
+    font: inherit;
+    transition: border-color .12s ease, background .12s ease, box-shadow .12s ease;
+  }
+  input:focus, select:focus, textarea:focus {
+    outline: none;
+    background: #fff;
+    box-shadow: 0 0 0 3px rgba(40, 113, 95, .14);
+    border-color: var(--accent);
+  }
+  textarea { resize: vertical; min-height: 74px; }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .row3 { display: grid; grid-template-columns: 1fr 1fr 1.1fr; gap: 10px; }
+  .field { margin-bottom: 12px; }
+  .focus-scale { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+  .focus-scale button {
+    padding: 10px 0;
+    border: 1px solid var(--line);
+    background: var(--field);
+    border-radius: var(--radius);
+    font-family: var(--mono);
+    font-weight: 700;
+    color: var(--muted);
+    transition: background .12s ease, color .12s ease, border-color .12s ease;
+  }
+  .focus-scale button.sel {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+  }
+  .btn {
+    border: 1px solid var(--line);
+    background: #fff;
+    border-radius: var(--radius);
+    padding: 10px 13px;
+    font-weight: 700;
+    cursor: pointer;
+    color: var(--ink);
+    transition: border-color .12s ease, background .12s ease, color .12s ease;
+  }
+  .btn:hover {
+    border-color: var(--line-strong);
+    background: var(--field);
+  }
+  .btn.primary {
+    width: 100%;
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+    padding: 12px;
+  }
+  .btn.primary:hover { background: #215f50; border-color: #215f50; }
+  .btn.icon {
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    color: var(--rust);
+    background: transparent;
+  }
+  .actions { display: flex; gap: 9px; flex-wrap: wrap; align-items: center; }
+  .task-form {
+    display: grid;
+    grid-template-columns: 140px minmax(0, 1fr) auto;
+    gap: 8px;
+    align-items: end;
+    margin-bottom: 12px;
+  }
+  .task-board {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+  }
+  .task-col {
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--field);
+    padding: 12px;
+    min-height: 112px;
+  }
+  .task-col h3 {
+    margin: 0 0 10px;
+    font-size: 13px;
+    color: var(--ink);
+  }
+  .task-item {
+    display: grid;
+    grid-template-columns: 22px 1fr 26px;
+    gap: 8px;
+    align-items: start;
+    padding: 8px 0;
+    border-top: 1px solid var(--line);
+    font-size: 14px;
+  }
+  .task-item:first-of-type { border-top: none; }
+  .task-item span.done { text-decoration: line-through; color: var(--muted); }
+  .trace-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: end;
+    margin-bottom: 18px;
+  }
+  .trace-head .date-field { width: 190px; }
+  .session-form {
+    display: grid;
+    grid-template-columns: 110px 110px minmax(170px, 1fr);
+    gap: 10px;
+    align-items: end;
+  }
+  .session-form .wide { grid-column: 1 / -1; }
+  .session-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 10px;
+    align-items: center;
+  }
+  .daily-list { margin-top: 18px; display: grid; gap: 10px; }
+  .session-card {
+    display: grid;
+    grid-template-columns: 122px 1fr 78px 96px;
+    gap: 12px;
+    align-items: start;
+    background: var(--field);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 13px;
+  }
+  .session-card:hover { border-color: var(--line-strong); background: #fff; }
+  .session-card.ongoing {
+    border-color: var(--blue);
+    border-left: 3px solid var(--blue);
+    background: #eff4f9;
+  }
+  .session-card.ongoing:hover { background: #e8eff7; }
+  .session-card.ongoing .time,
+  .session-card.ongoing .event,
+  .session-card.ongoing .score { color: var(--blue); }
+  .time {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .event { font-weight: 800; line-height: 1.35; }
+  .note { color: var(--muted); margin-top: 4px; font-size: 14px; }
+  .score {
+    font-family: var(--mono);
+    color: var(--amber);
+    text-align: right;
+    white-space: nowrap;
+  }
+  .card-actions {
+    display: grid;
+    gap: 6px;
+    justify-items: end;
+  }
+  .btn.small {
+    padding: 6px 9px;
+    font-size: 12px;
+  }
+  .empty {
+    color: var(--muted);
+    font-style: italic;
+    text-align: center;
+    padding: 22px 10px;
+  }
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 18px; }
+  .stat {
+    background: var(--field);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 13px;
+  }
+  .stat .n { font-size: 24px; font-weight: 800; font-family: var(--mono); }
+  .stat .l {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: .06em;
+  }
+  .hour-strip-panel {
+    padding: 14px;
+    margin: 0 0 18px;
+  }
+  .hour-strip-wrap {
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
+  .hour-strip {
+    display: grid;
+    grid-template-columns: repeat(24, minmax(24px, 1fr));
+    gap: 5px;
+    min-width: 650px;
+  }
+  .hour-cell {
+    height: 28px;
+    border: 1px solid #d6ded9;
+    border-radius: 4px;
+    background: #f5f3ee;
+  }
+  .hour-labels {
+    display: flex;
+    justify-content: space-between;
+    min-width: 650px;
+    margin-top: 8px;
+    font-family: var(--mono);
+    color: var(--muted);
+    font-size: 12px;
+  }
+  .bar-row { display: flex; align-items: center; gap: 10px; margin: 8px 0; font-size: 13px; }
+  .bar-row .name { width: 132px; flex-shrink: 0; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bar-track { flex: 1; background: #eef2f0; height: 18px; border-radius: 4px; overflow: hidden; }
+  .bar-fill { height: 100%; background: var(--accent); border-radius: 4px; }
+  .bar-row .val { width: 64px; text-align: right; font-family: var(--mono); color: var(--muted); font-size: 12px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; background: #fff; }
+  th, td { padding: 9px 7px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+  th {
+    font-family: var(--mono);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: var(--muted);
+  }
+  .table-wrap { overflow: auto; border: 1px solid var(--line); border-radius: var(--radius); background:#fff; }
+  @media (max-width: 900px) {
+    .main-grid, .task-board { grid-template-columns: 1fr; }
+    .session-form, .row3 { grid-template-columns: 1fr; }
+    .trace-head { align-items: stretch; flex-direction: column; }
+    .trace-head .date-field { width: 100%; }
+  }
+  @media (max-width: 620px) {
+    header.top { align-items: flex-start; flex-direction: column; }
+    .sub { text-align: left; }
+    .stats { grid-template-columns: repeat(2, 1fr); }
+    .session-card { grid-template-columns: 1fr; }
+    .card-actions { justify-items: stretch; grid-template-columns: 1fr 1fr; }
+    .time, .score { text-align: left; }
+    .task-form { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>Focus Trace</h1>
+    </div>
+    <div>
+      <div class="sub" id="today"></div>
+      <div class="sub" id="weekRange" style="margin-top:4px;color:var(--accent)"></div>
+    </div>
+  </header>
+
+  <div class="main-grid">
+    <main>
+      <section class="panel">
+        <div class="trace-head">
+          <h2>Daily Trace</h2>
+          <div class="date-field">
+            <label>Trace date</label>
+            <input type="date" id="date">
+          </div>
+        </div>
+
+        <div class="session-form">
+          <div>
+            <label>From</label>
+            <input type="text" id="start" inputmode="numeric" autocomplete="off" placeholder="10:30 or 1:40 pm">
+          </div>
+          <div>
+            <label>To</label>
+            <input type="text" id="end" inputmode="numeric" autocomplete="off" placeholder="11:10, or – if ongoing">
+          </div>
+          <div>
+            <label>Event</label>
+            <input type="text" id="event" placeholder="e.g. GraphCoT coding">
+          </div>
+          <div class="wide">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+              <input type="checkbox" id="personalChk" style="width:auto;margin:0">
+              <span>Personal time (no focus score)</span>
+            </label>
+          </div>
+          <div class="wide" id="focusRow">
+            <label>Focus score</label>
+            <div class="focus-scale" id="focus">
+              <button data-v="1">1</button>
+              <button data-v="2">2</button>
+              <button data-v="3">3</button>
+              <button data-v="4">4</button>
+              <button data-v="5">5</button>
+            </div>
+          </div>
+          <div class="wide">
+            <label>Notes</label>
+            <textarea id="note" placeholder="Optional details, obstacle, or what helped."></textarea>
+          </div>
+          <div class="wide">
+            <div class="session-actions">
+              <button class="btn primary" id="add">Add daily item</button>
+              <button class="btn" id="cancelEdit" style="display:none" type="button">Cancel edit</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="daily-list" id="dailyList"></div>
+        <div class="actions" style="margin-top:16px">
+          <button class="btn primary" id="downloadXlsx" style="width:auto;padding:10px 13px">Download XLSX</button>
+          <button class="btn" id="export">Export JSON</button>
+          <button class="btn" id="importBtn">Import XSLS</button>
+          <input type="file" id="importFile" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,.json,application/json" style="display:none">
+        </div>
+        <div class="sub" id="xlsxStatus" style="margin-top:10px;text-align:left">First click on Download XLSX lets you choose where to save; the location is then remembered.</div>
+      </section>
+
+      <details class="panel">
+        <summary>Week setup</summary>
+        <div class="details-body">
+          <div class="field">
+            <label>Week start</label>
+            <input type="date" id="weekStart">
+          </div>
+
+          <div class="task-form">
+            <div>
+              <label>Area</label>
+              <select id="taskArea">
+                <option value="research">Research</option>
+                <option value="personal">Personal</option>
+                <option value="fun">Fun</option>
+              </select>
+            </div>
+            <div>
+              <label>Task</label>
+              <input type="text" id="taskText" placeholder="Add one concrete task">
+            </div>
+            <button class="btn" id="addTask">Add</button>
+          </div>
+
+          <div class="task-board">
+            <div class="task-col">
+              <h3>Research</h3>
+              <div id="researchTasks"></div>
+            </div>
+            <div class="task-col">
+              <h3>Personal</h3>
+              <div id="personalTasks"></div>
+            </div>
+            <div class="task-col">
+              <h3>Fun</h3>
+              <div id="funTasks"></div>
+            </div>
+          </div>
+
+          <div class="actions" style="margin-top:16px">
+            <button class="btn primary" id="saveWeek">Save week setup</button>
+            <button class="btn" id="copyWeek">Copy week</button>
+          </div>
+        </div>
+      </details>
+    </main>
+
+    <aside>
+      <details class="panel">
+        <summary>Dashboard</summary>
+        <div class="details-body">
+          <div class="stats" id="stats"></div>
+
+          <div class="panel hour-strip-panel">
+            <h2>Focus by hour of day</h2>
+            <div class="hour-strip-wrap">
+              <div class="hour-strip" id="hourStrip"></div>
+              <div class="hour-labels"><span>12a</span><span>6a</span><span>12p</span><span>6p</span><span>11p</span></div>
+            </div>
+          </div>
+
+          <div class="panel" style="padding:14px;margin-top:0">
+            <h2>Hours by category</h2>
+            <div id="catChart"></div>
+          </div>
+
+          <div class="panel" style="padding:14px">
+            <h2>Recent sessions</h2>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr><th>Date</th><th>Time</th><th>Event</th><th>Hrs</th><th>Focus</th><th></th></tr>
+                </thead>
+                <tbody id="log"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </details>
+    </aside>
+  </div>
+</div>
+
+<script>
+const OLD_LS = "weekly_research_flow_simple_v1";
+const LS = "focus_trace_daily_v2";
+const COLORS = ["#2f6f5e", "#3d6687", "#b9822e", "#a5522f", "#6f6a60"];
+const EMBEDDED_XLSX_SESSIONS = [];
+let data = {
+  weekStart: "",
+  tasks: { research: [], personal: [], fun: [] },
+  sessions: []
+};
+let focusVal = 4;
+let editingId = null;
+let personalTouched = false;
+
+function todayISO(){ return new Date().toISOString().slice(0,10); }
+function dateObj(s){ return new Date(s + "T00:00:00"); }
+function iso(d){ return d.toISOString().slice(0,10); }
+function mondayOf(s){
+  const d = dateObj(s);
+  const day = d.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  d.setDate(d.getDate() + diff);
+  return iso(d);
+}
+function addDays(s,n){
+  const d = dateObj(s);
+  d.setDate(d.getDate() + n);
+  return iso(d);
+}
+function hoursBetween(s,e){
+  const [sh,sm] = s.split(":").map(Number);
+  const [eh,em] = e.split(":").map(Number);
+  let d = (eh * 60 + em) - (sh * 60 + sm);
+  if(d < 0) d += 1440;
+  return d / 60;
+}
+function parseTimeInput(raw){
+  if(raw == null) return "";
+  let s = String(raw).trim().toLowerCase();
+  if(!s) return "";
+  let mer = "";
+  const mm = s.match(/([ap])\.?m?\.?$/);
+  if(mm){ mer = mm[1]; s = s.slice(0, mm.index).trim(); }
+  s = s.replace(/[.\s]+/g, ":");           // "1.40" / "10 30" -> colon form
+  let h, mi, m;
+  if((m = s.match(/^(\d{1,2}):(\d{1,2})(?::\d{0,2})?$/))){ h = +m[1]; mi = +m[2]; }   // 10:30, 10:30:45, 10:30:
+  else if((m = s.match(/^(\d{1,2}):?$/))){ h = +m[1]; mi = 0; }                        // 10 or 10:
+  else if(/^\d{3,4}$/.test(s)){ const d = s.padStart(4,"0"); h = +d.slice(0,2); mi = +d.slice(2); } // 1030, 930
+  else return "";
+  if(Number.isNaN(h) || Number.isNaN(mi)) return "";
+  if(mer === "p" && h < 12) h += 12;
+  if(mer === "a" && h === 12) h = 0;
+  if(h < 0 || h > 23 || mi < 0 || mi > 59) return "";
+  return `${String(h).padStart(2,"0")}:${String(mi).padStart(2,"0")}`;
+}
+function readTime(id){
+  return parseTimeInput(document.getElementById(id).value);
+}
+function minutesFromTime(s){
+  if(!s) return null;
+  const [h,m] = s.split(":").map(Number);
+  if(Number.isNaN(h) || Number.isNaN(m)) return null;
+  return h * 60 + m;
+}
+function focusGreen(score){
+  if(!score) return "#f5f3ee";
+  const colors = ["#e8f3ed", "#cbe8d5", "#97d3aa", "#4fa86c", "#1f6f43"];
+  return colors[Math.max(0, Math.min(4, Math.ceil(score) - 1))];
+}
+function isPersonal(x){ return !!x.personal; }
+function isOngoing(x){ return !x.end; }
+function hasScore(x){ return x.focus != null && !Number.isNaN(Number(x.focus)) && Number(x.focus) > 0; }
+function focusText(x){ return hasScore(x) ? `F${x.focus}` : (isOngoing(x) ? "ongoing" : (isPersonal(x) ? "Personal" : "—")); }
+function focusDots(x){ return hasScore(x) ? "●".repeat(Math.max(0, Math.min(5, x.focus))) : (isOngoing(x) ? "▶" : "—"); }
+function durationFocusLabel(x){
+  const dur = isOngoing(x) ? "Ongoing (no end yet)" : `Duration: ${x.hrs.toFixed(2)}h`;
+  const foc = hasScore(x) ? "Focus: F" + x.focus : (isPersonal(x) ? "Personal time" : (isOngoing(x) ? "" : "Focus: —"));
+  return foc ? `${dur}<br>${foc}` : dur;
+}
+function timeDurationFocusLabel(x){
+  return `Time: ${x.start}–${x.end || "…"}<br>${durationFocusLabel(x)}`;
+}
+function promptTimeLabel(x){
+  return `${x.start}-${x.end || "ongoing"} | ${isOngoing(x) ? "ongoing" : x.hrs.toFixed(2) + "h"} | ${focusText(x)}`;
+}
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, c => ({
+    "&":"&amp;", "<":"&lt;", ">":"&gt;", "\"":"&quot;", "'":"&#039;"
+  }[c]));
+}
+function uid(){ return Date.now() + Math.floor(Math.random() * 1000); }
+function normalizeSession(x){
+  const personal = !!x.personal;
+  const focus = (personal || x.focus == null) ? null : Number(x.focus);
+  return {
+    id: (typeof x.id === "number" ? x.id : (x.id !== undefined && x.id !== "" && Number.isFinite(+x.id) ? +x.id : uid())),
+    date: x.date || todayISO(),
+    start: x.start || "",
+    end: x.end || "",
+    hrs: Number(x.hrs || 0),
+    category: x.category || "Daily trace",
+    event: x.event || x.title || x.category || "Session",
+    personal,
+    focus,
+    note: x.note || "",
+    startHour: Number(x.startHour || (x.start ? x.start.split(":")[0] : 0))
+  };
+}
+function validTimedSession(x){
+  return Boolean(x.date && x.start && x.event);
+}
+function mergeEmbeddedSessions(sessions){
+  const timed = sessions.filter(validTimedSession);
+  const byId = new Set(timed.map(x => String(x.id)));
+  const byContent = new Set(timed.map(x => `${x.date}|${x.start}|${x.end}|${x.event}`));
+  const extras = EMBEDDED_XLSX_SESSIONS
+    .map(normalizeSession)
+    .filter(x => !byId.has(String(x.id)) && !byContent.has(`${x.date}|${x.start}|${x.end}|${x.event}`));
+  return [...timed, ...extras];
+}
+function setFocus(v){
+  focusVal = (v === "na" || v === null || v === undefined) ? null : (Number(v) || null);
+  document.querySelectorAll("#focus button").forEach(x => {
+    const on = x.dataset.v === "na" ? focusVal === null : +x.dataset.v === focusVal;
+    x.classList.toggle("sel", on);
+  });
+}
+function setPersonal(on){
+  const chk = document.getElementById("personalChk");
+  chk.checked = !!on;
+  document.getElementById("focusRow").style.display = on ? "none" : "";
+}
+function resetSessionForm(){
+  editingId = null;
+  document.getElementById("start").value = "";
+  document.getElementById("end").value = "";
+  document.getElementById("event").value = "";
+  document.getElementById("note").value = "";
+  document.getElementById("add").textContent = "Add daily item";
+  document.getElementById("cancelEdit").style.display = "none";
+  setFocus(4);
+  setPersonal(false);
+  personalTouched = false;
+}
+function migrateOldShape(old){
+  const migrated = {
+    weekStart: old.weekStart || mondayOf(todayISO()),
+    tasks: { research: [], personal: [], fun: [] },
+    sessions: (old.sessions || []).map(normalizeSession)
+  };
+  if(old.weeklyGoal) migrated.tasks.research.push({ id: uid(), text: old.weeklyGoal, done: false });
+  if(old.weeklyRule) migrated.tasks.personal.push({ id: uid(), text: old.weeklyRule, done: false });
+  return migrated;
+}
+function load(){
+  try {
+    const current = JSON.parse(localStorage.getItem(LS));
+    if(current) {
+      const sessions = mergeEmbeddedSessions((current.sessions || []).map(normalizeSession));
+      data = {
+        weekStart: current.weekStart || mondayOf(todayISO()),
+        tasks: current.tasks || { research: [], personal: [], fun: [] },
+        sessions
+      };
+      save();
+      return;
+    }
+  } catch(e) {}
+
+  try {
+    const old = JSON.parse(localStorage.getItem(OLD_LS));
+    if(old) {
+      data = migrateOldShape(old);
+      data.sessions = mergeEmbeddedSessions(data.sessions);
+      save();
+      return;
+    }
+  } catch(e) {}
+
+  data.weekStart = mondayOf(todayISO());
+  data.sessions = mergeEmbeddedSessions([]);
+  save();
+}
+function save(){ localStorage.setItem(LS, JSON.stringify(data)); }
+function selectedDate(){ return document.getElementById("date").value || todayISO(); }
+function inWeek(x){
+  const ws = data.weekStart || mondayOf(todayISO());
+  return x.date >= ws && x.date <= addDays(ws, 6);
+}
+function inferCategory(x){
+  const text = `${x.event || ""} ${x.note || ""}`.toLowerCase();
+  if(/meeting|admin|message|wechat|email/.test(text)) return "Admin / meeting";
+  if(/break|lunch|dinner|nap|rest|exercise|badminton|pingpong/.test(text)) return "Personal / life";
+  if(/fun|game|tv|movie|walk/.test(text)) return "Fun";
+  return "Research / work";
+}
+function init(){
+  load();
+  document.getElementById("today").textContent = new Date().toDateString();
+  document.getElementById("date").value = todayISO();
+  document.getElementById("weekStart").value = data.weekStart;
+  document.querySelectorAll("#focus button").forEach(b => {
+    b.onclick = () => { setFocus(b.dataset.v); };
+  });
+  setFocus(focusVal);
+  document.getElementById("personalChk").addEventListener("change", () => {
+    personalTouched = true;
+    setPersonal(document.getElementById("personalChk").checked);
+  });
+  const autoPersonal = () => {
+    if(personalTouched || editingId) return;
+    const cat = inferCategory({ event: document.getElementById("event").value, note: document.getElementById("note").value });
+    setPersonal(cat === "Personal / life" || cat === "Fun");
+  };
+  document.getElementById("event").addEventListener("input", autoPersonal);
+  document.getElementById("note").addEventListener("input", autoPersonal);
+  ["start","end"].forEach(id => {
+    const el = document.getElementById(id);
+    el.addEventListener("blur", () => { const t = parseTimeInput(el.value); if(t) el.value = t; });
+  });
+  document.getElementById("date").addEventListener("change", render);
+  render();
+  restoreSaveHandle();
+}
+document.getElementById("add").onclick = () => {
+  const date = selectedDate();
+  const start = readTime("start");
+  const end = readTime("end");
+  let event = document.getElementById("event").value.trim();
+  let note = document.getElementById("note").value.trim();
+  if(!event && note) {
+    event = note;
+    note = "";
+  }
+  if(!event) {
+    alert("Add an event or a note.");
+    return;
+  }
+  const endRaw = document.getElementById("end").value.trim();
+  const endBlank = endRaw === "" || endRaw === "-";
+  if(!start) {
+    alert("Enter a From time as hour:minute, e.g. 10:30 or 1:40 pm.");
+    return;
+  }
+  if(!endBlank && !end) {
+    alert("The To time isn't valid. Leave it empty or '-' for an ongoing event, or enter an hour:minute like 11:10.");
+    return;
+  }
+  const ongoing = endBlank;                                  // no end yet
+  const hrs = ongoing ? 0 : +hoursBetween(start,end).toFixed(2);
+  const personal = document.getElementById("personalChk").checked;
+  const session = {
+    id: editingId || uid(),
+    date,
+    start,
+    end: ongoing ? "" : end,
+    hrs,
+    category: "Daily trace",
+    event,
+    personal,
+    focus: (personal || ongoing) ? null : focusVal,          // ongoing: focus not required
+    note,
+    startHour: +start.split(":")[0]
+  };
+  session.category = personal ? "Personal / life" : inferCategory(session);
+  if(editingId) {
+    data.sessions = data.sessions.map(x => x.id === editingId ? session : x);
+  } else {
+    data.sessions.push(session);
+  }
+  save();
+  resetSessionForm();
+  render();
+};
+document.getElementById("cancelEdit").onclick = () => {
+  resetSessionForm();
+};
+document.getElementById("saveWeek").onclick = () => {
+  data.weekStart = document.getElementById("weekStart").value || mondayOf(todayISO());
+  save();
+  render();
+};
+document.getElementById("addTask").onclick = () => {
+  const area = document.getElementById("taskArea").value;
+  const text = document.getElementById("taskText").value.trim();
+  if(!text) return;
+  data.tasks[area].push({ id: uid(), text, done: false });
+  document.getElementById("taskText").value = "";
+  save();
+  renderTasks();
+};
+function toggleTask(area,id){
+  data.tasks[area] = data.tasks[area].map(x => x.id === id ? { ...x, done: !x.done } : x);
+  save();
+  renderTasks();
+}
+function deleteTask(area,id){
+  data.tasks[area] = data.tasks[area].filter(x => x.id !== id);
+  save();
+  renderTasks();
+}
+function delS(id){
+  if(editingId === id) resetSessionForm();
+  data.sessions = data.sessions.filter(x => x.id !== id);
+  save();
+  render();
+}
+function editS(id){
+  const item = data.sessions.find(x => x.id === id);
+  if(!item) return;
+  editingId = id;
+  document.getElementById("date").value = item.date || todayISO();
+  document.getElementById("start").value = item.start || "";
+  document.getElementById("end").value = item.end || "";
+  document.getElementById("event").value = item.event || "";
+  document.getElementById("note").value = item.note || "";
+  setFocus(hasScore(item) ? item.focus : null);
+  personalTouched = true;
+  setPersonal(!!item.personal);
+  document.getElementById("add").textContent = "Update daily item";
+  document.getElementById("cancelEdit").style.display = "";
+  document.getElementById("event").focus();
+  renderDaily();
+}
+window.toggleTask = toggleTask;
+window.deleteTask = deleteTask;
+window.delS = delS;
+window.editS = editS;
+
+function renderTasks(){
+  ["research", "personal", "fun"].forEach(area => {
+    const target = document.getElementById(`${area}Tasks`);
+    const list = data.tasks[area] || [];
+    target.innerHTML = list.length ? list.map(x => `
+      <div class="task-item">
+        <input type="checkbox" ${x.done ? "checked" : ""} onchange="toggleTask('${area}',${x.id})">
+        <span class="${x.done ? "done" : ""}">${escapeHtml(x.text)}</span>
+        <button class="btn icon" onclick="deleteTask('${area}',${x.id})">×</button>
+      </div>
+    `).join("") : '<div class="empty" style="padding:12px 0">No tasks yet.</div>';
+  });
+}
+function renderDaily(){
+  const d = selectedDate();
+  const day = data.sessions
+    .filter(x => x.date === d)
+    .sort((a,b) => (b.start || "").localeCompare(a.start || ""));
+  document.getElementById("dailyList").innerHTML = day.length ? day.map(x => `
+    <div class="session-card${isOngoing(x) ? " ongoing" : ""}">
+      <div class="time">${timeDurationFocusLabel(x)}</div>
+      <div>
+        <div class="event">${escapeHtml(x.event || x.category)}</div>
+        ${x.note ? `<div class="note">${escapeHtml(x.note)}</div>` : ""}
+      </div>
+      <div class="score">${focusDots(x)}</div>
+      <div class="card-actions">
+        <button class="btn small" onclick="editS(${x.id})">Modify</button>
+        <button class="btn icon" onclick="delS(${x.id})">×</button>
+      </div>
+    </div>
+  `).join("") : '<div class="empty">No daily items yet. Add the first block above.</div>';
+}
+function renderDashboard(){
+  const week = data.sessions.filter(inWeek);
+  const totalH = week.reduce((a,b) => a + b.hrs, 0);
+  const scored = week.filter(hasScore);
+  const avgFocus = scored.length ? scored.reduce((a,b) => a + (b.focus || 0), 0) / scored.length : 0;
+  const research = week.filter(x => x.category === "Research / work").reduce((a,b) => a + b.hrs, 0);
+  const personal = week.filter(x => x.category === "Personal / life").reduce((a,b) => a + b.hrs, 0);
+  document.getElementById("stats").innerHTML = [
+    [totalH.toFixed(1), "tracked hrs"],
+    [research.toFixed(1), "research hrs"],
+    [personal.toFixed(1), "personal hrs"],
+    [scored.length ? avgFocus.toFixed(1) : "--", "avg focus"]
+  ].map(([n,l]) => `<div class="stat"><div class="n">${n}</div><div class="l">${l}</div></div>`).join("");
+
+  const hourScore = Array(24).fill(0);
+  const hourWeight = Array(24).fill(0);
+  week.forEach(x => {
+    const start = minutesFromTime(x.start);
+    let end = minutesFromTime(x.end);
+    if(start === null || end === null || !hasScore(x)) return;
+    if(end <= start) end += 1440;
+    for(let h = 0; h < 24; h++) {
+      const base = h * 60;
+      const ranges = [[base, base + 60], [base + 1440, base + 1500]];
+      ranges.forEach(([from,to]) => {
+        const overlap = Math.max(0, Math.min(end, to) - Math.max(start, from));
+        if(overlap) {
+          hourScore[h] += x.focus * overlap;
+          hourWeight[h] += overlap;
+        }
+      });
+    }
+  });
+  document.getElementById("hourStrip").innerHTML = hourScore.map((score,h) => {
+    const avg = hourWeight[h] ? score / hourWeight[h] : 0;
+    const label = hourWeight[h] ? `${h}:00 · focus ${avg.toFixed(1)}/5 · ${Math.round(hourWeight[h])} min` : `${h}:00 · no timed focus`;
+    return `<div class="hour-cell" style="background:${focusGreen(avg)}" title="${label}"></div>`;
+  }).join("");
+
+  const byCat = {};
+  week.forEach(x => byCat[x.category] = (byCat[x.category] || 0) + x.hrs);
+  const entries = Object.entries(byCat).sort((a,b) => b[1] - a[1]);
+  const max = Math.max(...entries.map(e => e[1]), 1);
+  document.getElementById("catChart").innerHTML = entries.length ? entries.map(([c,h],i) => `
+    <div class="bar-row">
+      <span class="name">${escapeHtml(c)}</span>
+      <div class="bar-track"><div class="bar-fill" style="width:${h / max * 100}%;background:${COLORS[i % COLORS.length]}"></div></div>
+      <span class="val">${h.toFixed(1)}h</span>
+    </div>
+  `).join("") : '<div class="empty">No sessions this week.</div>';
+
+  const sorted = [...data.sessions].sort((a,b) => (b.date + b.start).localeCompare(a.date + a.start)).slice(0,30);
+  document.getElementById("log").innerHTML = sorted.length ? sorted.map(x => `
+    <tr>
+      <td>${x.date.slice(5)}</td>
+      <td>${x.start}–${x.end || "…"}</td>
+      <td>${escapeHtml(x.event || x.category)}</td>
+      <td>${x.hrs.toFixed(1)}</td>
+      <td>${focusDots(x)}</td>
+      <td><button class="btn icon" onclick="delS(${x.id})">×</button></td>
+    </tr>
+  `).join("") : '<tr><td colspan="6" class="empty">No sessions yet.</td></tr>';
+}
+function render(){
+  const ws = data.weekStart || mondayOf(todayISO());
+  document.getElementById("weekRange").textContent = `${ws} — ${addDays(ws,6)}`;
+  document.getElementById("weekStart").value = ws;
+  renderTasks();
+  renderDaily();
+  renderDashboard();
+}
+function weeklyPrompt(){
+  const ws = data.weekStart || mondayOf(todayISO());
+  const week = data.sessions.filter(inWeek).sort((a,b) => (a.date + a.start).localeCompare(b.date + b.start));
+  const taskLines = ["research", "personal", "fun"].map(area => {
+    const items = (data.tasks[area] || []).map(x => `${x.done ? "[x]" : "[ ]"} ${x.text}`).join("\n");
+    return `${area.toUpperCase()}:\n${items || "- none"}`;
+  }).join("\n\n");
+  return `Analyze my weekly focus trace.
+
+Week: ${ws} — ${addDays(ws,6)}
+
+Tasks:
+${taskLines}
+
+Sessions:
+${week.map(x => `- ${x.date} ${promptTimeLabel(x)} | ${x.category} | ${hasScore(x) ? `focus ${x.focus}/5` : (isPersonal(x) ? "personal time" : "n/a")} | ${x.event}${x.note ? ` | ${x.note}` : ""}`).join("\n")}
+
+Please give:
+1. Main weekly pattern.
+2. Biggest productivity leak.
+3. Best schedule structure for next week.
+4. 3 concrete rules for next week.`;
+}
+function copyText(txt){
+  navigator.clipboard.writeText(txt).then(() => alert("Copied."));
+}
+document.getElementById("copyWeek").onclick = () => copyText(weeklyPrompt());
+document.getElementById("export").onclick = () => {
+  const blob = new Blob([JSON.stringify(data,null,2)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "focus-trace.json";
+  a.click();
+};
+/* ============================================================
+   Real .xlsx engine (dependency-free) + File System Access sync
+   Genuine OOXML so openpyxl / pandas / Codex can read it on disk.
+   ============================================================ */
+const XLSX_HEADERS = ["Date","From","To","Duration Hours","Focus","Event","Notes","Category"];
+const CRC_TABLE = (() => {
+  const t = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; }
+  return t;
+})();
+function crc32(bytes){ let c = 0xFFFFFFFF; for (let i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+async function inflateRaw(bytes){
+  const ds = new DecompressionStream("deflate-raw");
+  const stream = new Response(new Blob([bytes]).stream().pipeThrough(ds));
+  return new Uint8Array(await stream.arrayBuffer());
+}
+async function unzip(bytes){
+  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let eocd = -1;
+  for (let i = bytes.length - 22; i >= 0; i--) { if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; } }
+  if (eocd < 0) throw new Error("Not a zip (no EOCD)");
+  const cdCount = dv.getUint16(eocd + 10, true);
+  let ptr = dv.getUint32(eocd + 16, true);
+  const files = {};
+  for (let n = 0; n < cdCount; n++) {
+    if (dv.getUint32(ptr, true) !== 0x02014b50) throw new Error("Bad central dir");
+    const method = dv.getUint16(ptr + 10, true);
+    const compSize = dv.getUint32(ptr + 20, true);
+    const nameLen = dv.getUint16(ptr + 28, true);
+    const extraLen = dv.getUint16(ptr + 30, true);
+    const commentLen = dv.getUint16(ptr + 32, true);
+    const localOff = dv.getUint32(ptr + 42, true);
+    const name = new TextDecoder().decode(bytes.subarray(ptr + 46, ptr + 46 + nameLen));
+    const lnameLen = dv.getUint16(localOff + 26, true);
+    const lextraLen = dv.getUint16(localOff + 28, true);
+    const dataStart = localOff + 30 + lnameLen + lextraLen;
+    files[name] = { method, comp: bytes.subarray(dataStart, dataStart + compSize) };
+    ptr += 46 + nameLen + extraLen + commentLen;
+  }
+  const out = {};
+  for (const [name, f] of Object.entries(files)) out[name] = f.method === 0 ? f.comp.slice() : await inflateRaw(f.comp);
+  return out;
+}
+function xattr(tag, name){ const m = tag.match(new RegExp(name + '="([^"]*)"')); return m ? m[1] : null; }
+function colToNum(ref){ const m = ref.match(/^([A-Z]+)/); let n = 0; for (const ch of m[1]) n = n * 26 + (ch.charCodeAt(0) - 64); return n; }
+function numToCol(n){ let s = ""; while (n > 0) { const r = (n - 1) % 26; s = String.fromCharCode(65 + r) + s; n = Math.floor((n - 1) / 26); } return s; }
+function decodeXmlEntities(s){ return s.replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/&quot;/g,'"').replace(/&apos;/g,"'").replace(/&#(\d+);/g,(_,d)=>String.fromCharCode(+d)).replace(/&amp;/g,"&"); }
+function escapeXml(v){ return String(v ?? "").replace(/[<>&'"]/g, ch => ({ "<":"&lt;", ">":"&gt;", "&":"&amp;", "'":"&apos;", '"':"&quot;" }[ch])); }
+function serialToISODate(serial){ return new Date(Math.round(serial) * 86400000 + Date.UTC(1899, 11, 30)).toISOString().slice(0, 10); }
+function fracToHHMM(frac){ let mins = Math.round((frac - Math.floor(frac)) * 24 * 60); mins = ((mins % 1440) + 1440) % 1440; return `${String(Math.floor(mins/60)).padStart(2,"0")}:${String(mins%60).padStart(2,"0")}`; }
+function looksLikeSerialDate(v){ return v > 20000 && v < 80000; }
+function parseSharedStrings(xml){
+  if (!xml) return [];
+  const out = []; const siRe = /<si>([\s\S]*?)<\/si>/g; let m;
+  while ((m = siRe.exec(xml))) out.push([...m[1].matchAll(/<t[^>]*>([\s\S]*?)<\/t>/g)].map(x => decodeXmlEntities(x[1])).join(""));
+  return out;
+}
+function parseSheet(xml, sharedStrings){
+  const rows = {}; const rowRe = /<row[^>]*r="(\d+)"[^>]*>([\s\S]*?)<\/row>/g; let rm;
+  while ((rm = rowRe.exec(xml))) {
+    const cells = {}; const cellRe = /<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g; let cm;
+    while ((cm = cellRe.exec(rm[2]))) {
+      const inner = cm[2] || ""; const ref = xattr("<c " + cm[1], "r"); if (!ref) continue;
+      const t = xattr("<c " + cm[1], "t"); let value = null, isString = false;
+      if (t === "s") { const vm = inner.match(/<v>([\s\S]*?)<\/v>/); if (vm) { value = sharedStrings[+vm[1]] ?? ""; isString = true; } }
+      else if (t === "inlineStr") { const im = inner.match(/<t[^>]*>([\s\S]*?)<\/t>/); value = im ? decodeXmlEntities(im[1]) : ""; isString = true; }
+      else if (t === "str") { const vm = inner.match(/<v>([\s\S]*?)<\/v>/); value = vm ? decodeXmlEntities(vm[1]) : ""; isString = true; }
+      else { const vm = inner.match(/<v>([\s\S]*?)<\/v>/); if (vm) { value = parseFloat(vm[1]); } }
+      cells[colToNum(ref)] = { value, isString };
+    }
+    rows[+rm[1]] = cells;
+  }
+  return rows;
+}
+async function readXlsxToday(bytes){
+  const parts = await unzip(bytes); const dec = new TextDecoder();
+  const wbXml = dec.decode(parts["xl/workbook.xml"] || new Uint8Array());
+  const relsXml = dec.decode(parts["xl/_rels/workbook.xml.rels"] || new Uint8Array());
+  const shared = parseSharedStrings(parts["xl/sharedStrings.xml"] ? dec.decode(parts["xl/sharedStrings.xml"]) : "");
+  const sheetTags = [...wbXml.matchAll(/<sheet\b[^>]*\/>/g)].map(x => x[0]);
+  let ridForToday = null, firstRid = null;
+  for (const tag of sheetTags) { const rid = xattr(tag, "r:id"); if (firstRid === null) firstRid = rid; if ((xattr(tag,"name")||"").toLowerCase() === "today") ridForToday = rid; }
+  const rid = ridForToday || firstRid; let target = null;
+  for (const rel of [...relsXml.matchAll(/<Relationship\b[^>]*\/>/g)].map(x => x[0])) if (xattr(rel, "Id") === rid) target = xattr(rel, "Target");
+  let path = target ? ("xl/" + target.replace(/^\/?xl\//, "").replace(/^\//, "")) : "xl/worksheets/sheet1.xml";
+  if (!parts[path]) path = Object.keys(parts).find(p => /xl\/worksheets\/sheet\d+\.xml$/.test(p));
+  const grid = parseSheet(dec.decode(parts[path]), shared);
+  const rowIdx = Object.keys(grid).map(Number).sort((a, b) => a - b);
+  if (!rowIdx.length) return [];
+  const headerRow = grid[rowIdx[0]]; const colOf = {};
+  for (const [col, cell] of Object.entries(headerRow)) { const h = String(cell.value ?? "").trim(); if (h) colOf[h] = +col; }
+  const get = (cells, header) => { const c = colOf[header]; return c != null ? cells[c] : undefined; };
+  const sessions = [];
+  for (let i = 1; i < rowIdx.length; i++) {
+    const cells = grid[rowIdx[i]]; const dCell = get(cells, "Date"); const evCell = get(cells, "Event");
+    if (!dCell && !evCell) continue;
+    let date = dCell ? (dCell.isString ? String(dCell.value) : (looksLikeSerialDate(dCell.value) ? serialToISODate(dCell.value) : String(dCell.value))) : "";
+    date = String(date).slice(0, 10);
+    const toTime = (cell) => (!cell || cell.value === null || cell.value === "") ? "" : (cell.isString ? String(cell.value) : fracToHHMM(cell.value));
+    const start = toTime(get(cells, "From")); const end = toTime(get(cells, "To"));
+    const num = (cell) => (cell && cell.value !== null && cell.value !== "" ? Number(cell.value) : 0);
+    const str = (cell) => (cell && cell.value != null ? String(cell.value) : "");
+    const event = str(evCell);
+    if (!date || !start || !event) continue;
+    let hrs = num(get(cells, "Duration Hours"));
+    if (!hrs && start && end) hrs = +hoursBetween(start, end).toFixed(2);
+    const focusCell = get(cells, "Focus");
+    const category = str(get(cells, "Category")) || "Research / work";
+    const personal = /personal/i.test(category);
+    const focusNum = (focusCell && focusCell.value !== "" && focusCell.value != null) ? num(focusCell) : null;
+    sessions.push({ id: uid(), date, start, end, hrs, personal, focus: personal ? null : focusNum, event, note: str(get(cells, "Notes")), category, startHour: +start.split(":")[0] });
+  }
+  return sessions;
+}
+/* ---- zip writer (STORE) + xlsx builder ---- */
+function strBytes(s){ return new TextEncoder().encode(s); }
+function u16(n){ return [n & 0xFF, (n >>> 8) & 0xFF]; }
+function u32(n){ return [n & 0xFF, (n >>> 8) & 0xFF, (n >>> 16) & 0xFF, (n >>> 24) & 0xFF]; }
+function buildZip(files){
+  const local = [], central = []; let offset = 0;
+  for (const f of files) {
+    const nameB = strBytes(f.name), crc = crc32(f.data), size = f.data.length;
+    const lh = [...u32(0x04034b50), ...u16(20), ...u16(0), ...u16(0), ...u16(0), ...u16(0), ...u32(crc), ...u32(size), ...u32(size), ...u16(nameB.length), ...u16(0)];
+    const lhBytes = new Uint8Array(lh.length + nameB.length + size);
+    lhBytes.set(lh, 0); lhBytes.set(nameB, lh.length); lhBytes.set(f.data, lh.length + nameB.length);
+    local.push(lhBytes);
+    const ch = [...u32(0x02014b50), ...u16(20), ...u16(20), ...u16(0), ...u16(0), ...u16(0), ...u16(0), ...u32(crc), ...u32(size), ...u32(size), ...u16(nameB.length), ...u16(0), ...u16(0), ...u16(0), ...u16(0), ...u32(0), ...u32(offset)];
+    const chBytes = new Uint8Array(ch.length + nameB.length); chBytes.set(ch, 0); chBytes.set(nameB, ch.length);
+    central.push(chBytes); offset += lhBytes.length;
+  }
+  const cdSize = central.reduce((a, b) => a + b.length, 0), cdOffset = offset;
+  const eocd = new Uint8Array([...u32(0x06054b50), ...u16(0), ...u16(0), ...u16(files.length), ...u16(files.length), ...u32(cdSize), ...u32(cdOffset), ...u16(0)]);
+  const out = new Uint8Array(offset + cdSize + eocd.length); let p = 0;
+  for (const b of local) { out.set(b, p); p += b.length; }
+  for (const b of central) { out.set(b, p); p += b.length; }
+  out.set(eocd, p); return out;
+}
+function sheetXmlFromGrid(grid){
+  let body = "";
+  grid.forEach((row, r) => {
+    const rr = r + 1; let cells = "";
+    row.forEach((cell, c) => {
+      if (cell == null || cell.v === "" || cell.v == null) return;
+      const ref = numToCol(c + 1) + rr;
+      cells += cell.t === "s"
+        ? `<c r="${ref}" t="inlineStr"><is><t xml:space="preserve">${escapeXml(cell.v)}</t></is></c>`
+        : `<c r="${ref}"><v>${cell.v}</v></c>`;
+    });
+    body += `<row r="${rr}">${cells}</row>`;
+  });
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${body}</sheetData></worksheet>`;
+}
+function buildXlsx(sessions){
+  const S = v => ({ v, t: "s" }), N = v => ({ v, t: "n" });
+  const rows = [...sessions].sort((a, b) => (a.date + " " + (a.start || "")).localeCompare(b.date + " " + (b.start || "")));
+
+  // Sheet 1: Sessions (full history)
+  const log = [XLSX_HEADERS.map(S)];
+  rows.forEach(x => log.push([S(x.date), S(x.start || ""), S(x.end || ""), N(+(x.hrs || 0)), hasScore(x) ? N(+x.focus) : S(""), S(x.event || ""), S(x.note || ""), S(x.category || "")]));
+
+  // Aggregates (all-time)
+  const totalH = rows.reduce((a, b) => a + (b.hrs || 0), 0);
+  const scored = rows.filter(hasScore);
+  const avgFocus = scored.length ? scored.reduce((a, b) => a + (b.focus || 0), 0) / scored.length : 0;
+  const dates = [...new Set(rows.map(x => x.date))].sort();
+  const catMap = {};
+  rows.forEach(x => { const c = x.category || "Uncategorized"; (catMap[c] ||= { h: 0, n: 0 }); catMap[c].h += x.hrs || 0; catMap[c].n++; });
+  const cats = Object.keys(catMap).sort((a, b) => catMap[b].h - catMap[a].h);
+  const dateMap = {};
+  rows.forEach(x => { (dateMap[x.date] ||= { h: 0, fSum: 0, fN: 0, n: 0 }); dateMap[x.date].h += x.hrs || 0; dateMap[x.date].n++; if (hasScore(x)) { dateMap[x.date].fSum += x.focus; dateMap[x.date].fN++; } });
+
+  const dash = [];
+  dash.push([S("Focus Trace — All history")]);
+  dash.push([S("Generated"), S(new Date().toISOString().slice(0, 19).replace("T", " "))]);
+  dash.push([]);
+  dash.push([S("Total hours"), N(+totalH.toFixed(2)), S("Avg focus"), N(+avgFocus.toFixed(2)), S("Items"), N(rows.length), S("Days"), N(dates.length)]);
+  dash.push([]);
+  dash.push([S("By category")]);
+  dash.push([S("Category"), S("Hours"), S("Items")]);
+  cats.forEach(c => dash.push([S(c), N(+catMap[c].h.toFixed(2)), N(catMap[c].n)]));
+  dash.push([]);
+  dash.push([S("By date")]);
+  dash.push([S("Date"), S("Hours"), S("Avg focus"), S("Items")]);
+  dates.forEach(dt => { const m = dateMap[dt]; dash.push([S(dt), N(+m.h.toFixed(2)), m.fN ? N(+(m.fSum / m.fN).toFixed(2)) : S(""), N(m.n)]); });
+
+  const files = [
+    { name: "[Content_Types].xml", data: strBytes(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>`) },
+    { name: "_rels/.rels", data: strBytes(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`) },
+    { name: "xl/workbook.xml", data: strBytes(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Sessions" sheetId="1" r:id="rId1"/><sheet name="Dashboard" sheetId="2" r:id="rId2"/></sheets></workbook>`) },
+    { name: "xl/_rels/workbook.xml.rels", data: strBytes(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/></Relationships>`) },
+    { name: "xl/worksheets/sheet1.xml", data: strBytes(sheetXmlFromGrid(log)) },
+    { name: "xl/worksheets/sheet2.xml", data: strBytes(sheetXmlFromGrid(dash)) }
+  ];
+  return buildZip(files);
+}
+
+/* ---- Save the .xlsx: pick a location once, then one-click overwrite ---- */
+let saveHandle = null;
+function idb(){ return new Promise((res, rej) => { const r = indexedDB.open("ft-fs", 1); r.onupgradeneeded = () => r.result.createObjectStore("h"); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); }
+async function idbSet(k, v){ const db = await idb(); return new Promise((res, rej) => { const t = db.transaction("h", "readwrite"); t.objectStore("h").put(v, k); t.oncomplete = () => res(); t.onerror = () => rej(t.error); }); }
+async function idbGet(k){ const db = await idb(); return new Promise((res, rej) => { const t = db.transaction("h", "readonly"); const rq = t.objectStore("h").get(k); rq.onsuccess = () => res(rq.result || null); rq.onerror = () => rej(rq.error); }); }
+function fsSupported(){ return typeof window.showSaveFilePicker === "function"; }
+function setXlsxStatus(txt, ok){ const el = document.getElementById("xlsxStatus"); if (el) { el.textContent = txt; el.style.color = ok ? "var(--accent)" : "var(--muted)"; } }
+async function ensurePermission(handle, mode = "readwrite"){
+  if (!handle) return false;
+  const opts = { mode };
+  if ((await handle.queryPermission(opts)) === "granted") return true;
+  return (await handle.requestPermission(opts)) === "granted";
+}
+async function pickLocation(){
+  const handle = await window.showSaveFilePicker({
+    suggestedName: "focus_trace_all.xlsx",
+    startIn: saveHandle || "documents",
+    types: [{ description: "Excel workbook", accept: { "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"] } }]
+  });
+  saveHandle = handle;
+  await idbSet("save-xlsx", handle);
+  return handle;
+}
+function downloadXlsx(){ // plain fallback -> browser Downloads folder
+  const blob = new Blob([buildXlsx(data.sessions)], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "focus_trace_all.xlsx";
+  a.click();
+  setXlsxStatus(`Downloaded focus_trace_all.xlsx (all ${data.sessions.length} records) to your Downloads folder.`, true);
+}
+async function writeTo(handle){
+  const w = await handle.createWritable();
+  await w.write(buildXlsx(data.sessions));
+  await w.close();
+  setXlsxStatus(`Saved all ${data.sessions.length} records to ${handle.name} · ${new Date().toLocaleTimeString()}`, true);
+}
+async function saveXlsx(){
+  if (!fsSupported()) { downloadXlsx(); return; }          // Safari/Firefox: normal download
+  try {
+    if (saveHandle && await ensurePermission(saveHandle)) {
+      await writeTo(saveHandle);                            // remembered file: one-click overwrite
+    } else {
+      await writeTo(await pickLocation());                 // first time / no access: choose location
+    }
+  } catch (e) {
+    if (e.name === "AbortError") return;
+    console.error(e);
+    try { await writeTo(await pickLocation()); }            // remembered file moved? choose again
+    catch (e2) { if (e2.name !== "AbortError") { console.error(e2); downloadXlsx(); } }
+  }
+}
+async function restoreSaveHandle(){
+  if (!fsSupported()) { setXlsxStatus("Download XLSX saves your full history to the browser's Downloads folder (this browser can't choose a folder).", false); return; }
+  try {
+    const handle = await idbGet("save-xlsx");
+    if (handle) { saveHandle = handle; setXlsxStatus(`Save location: ${handle.name}. Download XLSX updates it with all history.`, true); }
+    else setXlsxStatus("Download XLSX exports all history; the first click lets you choose where to save, then it's remembered.", false);
+  } catch (e) { console.warn(e); }
+}
+document.getElementById("downloadXlsx").onclick = () => saveXlsx();
+function mergeSessions(incoming){
+  const key = x => `${x.date}|${x.start}|${x.end}|${x.event}`;
+  const existing = new Set(data.sessions.map(key));
+  let added = 0;
+  incoming.map(normalizeSession).forEach(s => { if (!existing.has(key(s))) { data.sessions.push(s); existing.add(key(s)); added++; } });
+  return added;
+}
+document.getElementById("importBtn").onclick = () => document.getElementById("importFile").click();
+document.getElementById("importFile").onchange = async e => {
+  const f = e.target.files[0];
+  if(!f) return;
+  const isXlsx = /\.xlsx$/i.test(f.name) || f.type.includes("spreadsheetml");
+  try {
+    if(isXlsx){
+      const bytes = new Uint8Array(await f.arrayBuffer());
+      const rows = await readXlsxToday(bytes);
+      if(!rows.length){ alert("No session rows found in that spreadsheet. Expected a sheet with Date, From, To, Focus, Event columns."); }
+      else { const added = mergeSessions(rows); save(); render(); alert(`Imported ${added} new record${added===1?"":"s"} from ${f.name} (${rows.length - added} already present).`); }
+    } else {
+      const text = await f.text();
+      const imported = JSON.parse(text);
+      if(imported.sessions){
+        const added = mergeSessions(imported.sessions);
+        if(imported.tasks) data.tasks = imported.tasks;
+        save(); render();
+        alert(`Imported ${added} new record${added===1?"":"s"} from ${f.name}.`);
+      } else {
+        data = migrateOldShape(imported); save(); render();
+      }
+    }
+  } catch(err){
+    console.error(err);
+    alert("Couldn't read that file. Import a .xlsx exported from this page (or a compatible sheet), or a .json backup.");
+  } finally {
+    e.target.value = "";
+  }
+};
+init();
+</script>
+</body>
+</html>
